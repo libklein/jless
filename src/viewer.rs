@@ -696,6 +696,7 @@ impl JsonViewer {
 
     fn toggle_collapsed(&mut self) {
         let focused_row = &mut self.flatjson[self.focused_row];
+        focused_row.hide();
         if focused_row.is_primitive() {
             return;
         }
@@ -712,6 +713,7 @@ impl JsonViewer {
     }
 
     fn collapse_node_and_siblings(&mut self) {
+        self.flatjson[self.focused_row].hide();
         // If we're collapsing a node, make sure we're focused on the open.
         self.switch_focus_to_opening_of_container_if_on_closing();
         self.set_collapse_state_on_node_and_siblings(true);

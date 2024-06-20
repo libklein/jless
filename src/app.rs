@@ -4,6 +4,10 @@ use std::io;
 use std::io::Write;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
+use rsonpath::engine::{Compiler, Engine, RsonpathEngine};
+use rsonpath::input::BorrowedBytes;
+use rsonpath::result::Match;
+use rsonpath_syntax::prelude::*;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use termion::event::Key;
@@ -374,6 +378,10 @@ impl App {
                             let count = self.parse_input_buffer_as_number();
                             Some(Action::PageDown(count))
                         }
+                        Key::Ctrl('k') => {
+                            self.initialize_filter();
+                            Some(Action::NoOp)
+                        }
                         Key::Char('K') => {
                             let lines = self.parse_input_buffer_as_number();
                             Some(Action::FocusPrevSibling(lines))
@@ -650,6 +658,79 @@ impl App {
 
     fn parse_input_buffer_as_number(&mut self) -> usize {
         self.maybe_parse_input_buffer_as_number().unwrap_or(1)
+    }
+
+    fn create_path_query(&self, query: &str) -> Option<String> {
+        // TODO: It probably makes more sense to default to . behavior if $ is not supplied
+        Some(match query.chars().next()? {
+            '.' => {
+                let mut focused_row = self.viewer.focused_row;
+                // Move to last container opening
+                while !self.viewer.flatjson[focused_row].is_container() {
+                    focused_row -= 1;
+                }
+                let path = self
+                    .viewer
+                    .flatjson
+                    .build_path_to_node(flatjson::PathType::DotWithTopLevelIndex, focused_row)
+                    .unwrap_or("$".to_string());
+                if path.is_empty() {
+                    format!("${query}")
+                } else {
+                    format!("{path}{query}")
+                }
+            }
+            '$' => query.to_string(),
+            _ => format!("$.{}", query),
+        })
+    }
+
+    fn dump_matches(&mut self, matches: &Vec<Match>) {
+        let mut matches_str = String::new();
+        for m in matches.iter() {
+            matches_str.push_str(format!("\t{m}\n").as_str());
+        }
+        self.set_info_message(format!("Filter matched {matches_str} items"));
+    }
+
+    fn dump_matches_rows(&mut self, matches: &Vec<Match>) {
+        let mut matches_str = String::new();
+        for m in matches.iter() {
+            let matched_row = self.viewer.flatjson.find_row_by_index(m.span().start_idx());
+            if let Some(matched_row) = matched_row {
+                let val = &matched_row.value;
+                matches_str.push_str(format!("\t{val:?}\n").as_str());
+            } else {
+                matches_str.push_str("\t<out of bounds>\n");
+            }
+        }
+        self.set_info_message(format!("Filter matched\n{matches_str}"));
+    }
+
+    fn initialize_filter(&mut self) -> Option<()> {
+        let path_filter_string = self.readline("filter", "filter input")?;
+        let path_query_string = self.create_path_query(&path_filter_string)?;
+
+        let path_query = rsonpath_syntax::parse(&path_query_string)
+            .map_err(|e| {
+                self.set_error_message(format!("Failed to parse filter: {e}"));
+                e
+            })
+            .ok()?;
+
+        let engine = RsonpathEngine::compile_query(&path_query).ok()?;
+        let input = &self.viewer.flatjson;
+
+        let mut match_results: Vec<Match> = Vec::new();
+        let str = input.1.as_str();
+        // Get str as a slice of bytes.
+        let borrowed_bytes = BorrowedBytes::new(str.as_bytes());
+
+        engine.matches(&borrowed_bytes, &mut match_results).ok()?;
+
+        self.dump_matches_rows(&match_results);
+
+        Some(())
     }
 
     fn get_search_input_and_start_search(

@@ -385,6 +385,7 @@ impl YamlParser {
             next_sibling: OptionIndex::Nil,
             index_in_parent: 0,
             key_range: None,
+            hidden: false,
         });
 
         index

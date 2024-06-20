@@ -65,6 +65,15 @@ pub struct FlatJson(
 );
 
 impl FlatJson {
+    pub fn find_row_by_index(&self, index: usize) -> Option<&Row> {
+        for (i, row) in self.0.iter().enumerate() {
+            if row.range.start >= index as usize {
+                return Some(row);
+            }
+        }
+        None
+    }
+
     pub fn last_visible_index(&self) -> Index {
         let last_index = self.0.len() - 1;
 
@@ -510,6 +519,7 @@ pub struct Row {
     pub range: Range<usize>,
     pub key_range: Option<Range<usize>>,
     pub value: Value,
+    pub hidden: bool,
 }
 
 impl Row {
@@ -537,6 +547,9 @@ impl Row {
     pub fn is_array(&self) -> bool {
         self.value.is_array()
     }
+    pub fn is_visible(&self) -> bool {
+        !self.hidden
+    }
 
     fn expand(&mut self) {
         self.value.expand()
@@ -546,6 +559,15 @@ impl Row {
     }
     fn toggle_collapsed(&mut self) {
         self.value.toggle_collapsed()
+    }
+    pub fn hide(&mut self) {
+        self.hidden = true
+    }
+    fn show(&mut self) {
+        self.hidden = false
+    }
+    fn toggle_hidden(&mut self) {
+        self.hidden = !self.hidden
     }
 
     pub fn first_child(&self) -> OptionIndex {
